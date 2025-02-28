@@ -4,6 +4,7 @@ import struct
 import time
 import os
 import select
+import statistics
 
 def calculate_checksum(data):
     """Compute the ICMP checksum"""
@@ -79,7 +80,7 @@ def send_ping(dest_ip, count, interval, size, timeout, hostname):
     print(f"{sent} packets transmitted, {received} received, {loss:.0f}% packet loss, time {total_time}ms")
 
     if rtt_list:
-        print(f"rtt min/avg/max/mdev = {min(rtt_list):.3f}/{sum(rtt_list)/len(rtt_list):.3f}/{max(rtt_list):.3f}/{(max(rtt_list) - min(rtt_list)):.3f} ms")
+        print(f"rtt min/avg/max/stddev = {min(rtt_list):.3f}/{sum(rtt_list)/len(rtt_list):.3f}/{max(rtt_list):.3f}/{(statistics.stdev(rtt_list)):.3f} ms")
 
 def resolve_target(target):
     try:
@@ -96,10 +97,10 @@ def resolve_target(target):
 def main():
     parser = argparse.ArgumentParser(description="Unix-style Ping")
     parser.add_argument("host", type=str, help="Target IP or Hostname")
-    parser.add_argument("-c", type=int, default=None, help="Number of packets (default: 4)")
-    parser.add_argument("-i", type=float, default=1.0, help="Interval between packets (default: 1s)")
+    parser.add_argument("-c", type=int, default=None, help="Number of packets")
+    parser.add_argument("-i", type=float, default=1.0, help="Interval between packets")
     parser.add_argument("-s", type=int, default=56, help="Payload size (default: 56 bytes)")
-    parser.add_argument("-t", type=int, default=None, help="Timeout in seconds (default: 10)")
+    parser.add_argument("-t", type=int, default=None, help="Timeout in seconds")
 
     args = parser.parse_args()
     
