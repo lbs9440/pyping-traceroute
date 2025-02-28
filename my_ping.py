@@ -28,7 +28,7 @@ def send_ping(dest_ip, count, interval, size, timeout, hostname):
         s = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_ICMP)
         s.settimeout(timeout)
     except PermissionError:
-        print("ping: Operation not permitted (Try running as root)")
+        print("ping: Operation not allowed")
         return
     
     identifier = os.getpid() & 0xFFFF
@@ -36,33 +36,42 @@ def send_ping(dest_ip, count, interval, size, timeout, hostname):
     rtt_list = []
     start_time = time.time()
 
-    print(f"PING {hostname or dest_ip} ({dest_ip}) {size}({size+28}) bytes of data.")
+    print(f"PING {hostname or dest_ip} ({dest_ip}) {size} bytes of data.")
 
-    for seq in range(1, count + 1):
-        send_time = time.time()
-        packet = create_packet(identifier, seq, size)
-        s.sendto(packet, (dest_ip, 1))
-        sent += 1
+    seq = 1
+    try:
+        while count is None or seq <= count:
+            send_time = time.time()
+            packet = create_packet(identifier, seq, size)
+            s.sendto(packet, (dest_ip, 1))
+            sent += 1
 
-        try:
-            response, addr = s.recvfrom(1024)
-            recv_time = time.time()
-            rtt = (recv_time - send_time) * 1000  # Convert to ms
-            rtt_list.append(rtt)
-            received += 1
+            try:
+                response, addr = s.recvfrom(1024)
+                recv_time = time.time()
+                rtt = (recv_time - send_time) * 1000  # Convert to ms
+                rtt_list.append(rtt)
+                received += 1
 
-            # Extract TTL from IP header (byte 8)
-            ttl = struct.unpack("!B", response[8:9])[0]
+                # Extract TTL from IP header (byte 8)
+                ttl = struct.unpack("!B", response[8:9])[0]
 
-            print(f"{size} bytes from {addr[0]}: icmp_seq={seq} ttl={ttl} time={rtt:.1f} ms")
+                print(f"{size} bytes from {addr[0]}: icmp_seq={seq} ttl={ttl} time={rtt:.1f} ms")
 
-        except socket.timeout:
-            print(f"Request timeout for icmp_seq {seq}")
+            except socket.timeout:
+                print(f"Request timeout for icmp_seq {seq}")
 
-        if seq < count:
-            time.sleep(interval)
+            if count is None:
+                time.sleep(interval)
 
-    # Summary
+            elif seq < count:
+                time.sleep(interval)
+
+            seq += 1   
+    except KeyboardInterrupt:
+        pass
+
+    # Gathers all information for output's summary
     loss = ((sent - received) / sent) * 100
     total_time = int((time.time() - start_time) * 1000)
 
@@ -75,7 +84,7 @@ def send_ping(dest_ip, count, interval, size, timeout, hostname):
 def resolve_target(target):
     try:
         socket.inet_aton(target)
-        return target, None  # Already an IP
+        return target, None  
     except socket.error:
         try:
             ip = socket.gethostbyname(target)
@@ -87,7 +96,7 @@ def resolve_target(target):
 def main():
     parser = argparse.ArgumentParser(description="Unix-style Ping")
     parser.add_argument("host", type=str, help="Target IP or Hostname")
-    parser.add_argument("-c", type=int, default=4, help="Number of packets (default: 4)")
+    parser.add_argument("-c", type=int, default=None, help="Number of packets (default: 4)")
     parser.add_argument("-i", type=float, default=1.0, help="Interval between packets (default: 1s)")
     parser.add_argument("-s", type=int, default=56, help="Payload size (default: 56 bytes)")
     parser.add_argument("-t", type=int, default=None, help="Timeout in seconds (default: 10)")
