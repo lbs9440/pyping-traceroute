@@ -1,87 +1,102 @@
 import argparse
-import sphinx
 import socket
 import struct
 import time
 import os
 import select
 
-def calculate_checksum(src_string):
-    nbits = (len(src_string) // 2) * 2
-    count = 0
-    checksum = 0
+def calculate_checksum(data):
+    """Compute the ICMP checksum"""
+    if len(data) % 2:
+        data += b'\x00'  # Padding if odd-length
+    checksum = sum((data[i] << 8) + data[i + 1] for i in range(0, len(data), 2))
+    checksum = (checksum >> 16) + (checksum & 0xFFFF)
+    checksum = ~checksum & 0xFFFF
+    return checksum
 
-    while count < nbits:
-        temp = src_string[count + 1] * 256 + src_string[count]
-        checksum += temp
-        checksum &= 0xffffffff
-        count += 2
-    
-    if nbits < len(src_string):
-        checksum += src_string[len(src_string) - 1]
-        checksum &= 0xffffffff
-
-    checksum = (checksum >> 16) + (checksum & 0xffff)
-    checksum += (checksum >> 16)
-    result = ~checksum
-    result &= 0xffff
-    result = result >> 0 | (result << 8 & 0xffff)
-    return result
-
-def create_packet(identifier, seq, packetsize):
+def create_packet(identifier, seq, size):
+    """Create ICMP Echo Request packet"""
     header = struct.pack('!BBHHH', 8, 0, 0, identifier, seq)
-    payload = bytes(range(packetsize))
+    payload = bytes(range(size))
     checksum = calculate_checksum(header + payload)
     header = struct.pack('!BBHHH', 8, 0, checksum, identifier, seq)
     return header + payload
 
-def send(dst, count, wait, packetsize, timeout):
-    s = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_ICMP)
-    s.settimeout(timeout)
-
-    identifier = int(time.time()) & 0xFFFF
+def send_ping(dest_ip, count, interval, size, timeout, hostname):
+    """Send ICMP packets and format output like Unix ping"""
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_ICMP)
+        s.settimeout(timeout)
+    except PermissionError:
+        print("ping: Operation not permitted (Try running as root)")
+        return
+    
+    identifier = os.getpid() & 0xFFFF
+    sent, received = 0, 0
+    rtt_list = []
     start_time = time.time()
 
-    for seq in range(count):
-        if time.time() - start_time >= timeout:
-            break
+    print(f"PING {hostname or dest_ip} ({dest_ip}) {size}({size+28}) bytes of data.")
 
-        packet = create_packet(identifier, seq, packetsize)
-        s.sendto(packet, (dst, 1)) 
-
-        print(f"Sent ICMP Echo Request to {dst}, sequence = {seq}, size={packetsize}")
+    for seq in range(1, count + 1):
+        send_time = time.time()
+        packet = create_packet(identifier, seq, size)
+        s.sendto(packet, (dest_ip, 1))
+        sent += 1
 
         try:
-            s.recvfrom(1024)
-            print(f"Received reply from {dst}")
-        except s.timeout:
-            print("Request timed out")
-        
-        if seq < count - 1:
-            time.sleep(wait)
+            response, addr = s.recvfrom(1024)
+            recv_time = time.time()
+            rtt = (recv_time - send_time) * 1000  # Convert to ms
+            rtt_list.append(rtt)
+            received += 1
 
+            # Extract TTL from IP header (byte 8)
+            ttl = struct.unpack("!B", response[8:9])[0]
+
+            print(f"{size} bytes from {addr[0]}: icmp_seq={seq} ttl={ttl} time={rtt:.1f} ms")
+
+        except socket.timeout:
+            print(f"Request timeout for icmp_seq {seq}")
+
+        if seq < count:
+            time.sleep(interval)
+
+    # Summary
+    loss = ((sent - received) / sent) * 100
+    total_time = int((time.time() - start_time) * 1000)
+
+    print(f"\n--- {hostname or dest_ip} ping statistics ---")
+    print(f"{sent} packets transmitted, {received} received, {loss:.0f}% packet loss, time {total_time}ms")
+
+    if rtt_list:
+        print(f"rtt min/avg/max/mdev = {min(rtt_list):.3f}/{sum(rtt_list)/len(rtt_list):.3f}/{max(rtt_list):.3f}/{(max(rtt_list) - min(rtt_list)):.3f} ms")
+
+def resolve_target(target):
+    try:
+        socket.inet_aton(target)
+        return target, None  # Already an IP
+    except socket.error:
+        try:
+            ip = socket.gethostbyname(target)
+            return ip, target
+        except socket.gaierror:
+            print(f"ping: {target}: Name or service not known")
+            return None, None
 
 def main():
-    pingParser = argparse.ArgumentParser(prog='my_ping', description='TODO')
+    parser = argparse.ArgumentParser(description="Unix-style Ping")
+    parser.add_argument("host", type=str, help="Target IP or Hostname")
+    parser.add_argument("-c", type=int, default=4, help="Number of packets (default: 4)")
+    parser.add_argument("-i", type=float, default=1.0, help="Interval between packets (default: 1s)")
+    parser.add_argument("-s", type=int, default=56, help="Payload size (default: 56 bytes)")
+    parser.add_argument("-t", type=int, default=None, help="Timeout in seconds (default: 10)")
 
-    pingParser.add_argument("host", type=str, help="Target IP or Hostname")
-
-    pingParser.add_argument("-c", type=int, default=float("inf"), 
-                        help="Stop after sending (and receiving) count ECHO_RESPONSE packets. If not specified, runs until interrupted.")
-
-    pingParser.add_argument("-i", type=float, default=1.0, 
-                        help="Wait for wait seconds between sending each packet. Default is one second.")
-
-    pingParser.add_argument("-s", type=int, default=56, 
-                        help="Specify the number of data bytes to be sent. Default is 56 (64 ICMP data bytes including the header).")
-
-    pingParser.add_argument("-t", type=int, default=10, 
-                        help="Specify a timeout in seconds before ping exits regardless of how many packets have been received.")
-
-    args = pingParser.parse_args()
-    print(args)
+    args = parser.parse_args()
     
-    send(args.host, args.c, args.i, args.s, args.t)
+    ip, hostname = resolve_target(args.host)
+    if ip:
+        send_ping(ip, args.c, args.i, args.s, args.t, hostname)
 
 if __name__ == '__main__':
     main()
