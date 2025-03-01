@@ -3,11 +3,14 @@ import socket
 import struct
 import time
 import os
-import select
 import statistics
 
 def calculate_checksum(data):
-    """Compute the ICMP checksum"""
+    """Compute the ICMP checksum
+    
+    :param data: data to compute the checksum
+    :return checksum:
+    """
     if len(data) % 2:
         data += b'\x00'  # Padding if odd-length
     checksum = sum((data[i] << 8) + data[i + 1] for i in range(0, len(data), 2))
@@ -16,7 +19,13 @@ def calculate_checksum(data):
     return checksum
 
 def create_packet(identifier, seq, size):
-    """Create ICMP Echo Request packet"""
+    """Create ICMP Echo Request packet
+    
+    :param identifier: unique id for the packet
+    :param seq: sequence number for the packet
+    :param size: size of the packet in bytes
+    :return: returns the packet
+    """
     header = struct.pack('!BBHHH', 8, 0, 0, identifier, seq)
     payload = bytes(range(size))
     checksum = calculate_checksum(header + payload)
@@ -24,7 +33,16 @@ def create_packet(identifier, seq, size):
     return header + payload
 
 def send_ping(dest_ip, count, interval, size, timeout, hostname):
-    """Send ICMP packets and format output like Unix ping"""
+    """Send ICMP Echo Request packets and display response details.
+    
+    :param dest_ip: Destination IP address to send the ping.
+    :param count: Number of packets to send (None for unlimited).
+    :param interval: Time interval between successive packets in seconds.
+    :param size: Size of the ICMP payload in bytes.
+    :param timeout: Time in seconds to wait for a response before considering a packet lost.
+    :param hostname: Hostname of the target (if resolved from a domain).
+    :return: None
+    """
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_ICMP)
         s.settimeout(timeout)
@@ -83,6 +101,11 @@ def send_ping(dest_ip, count, interval, size, timeout, hostname):
         print(f"rtt min/avg/max/stddev = {min(rtt_list):.3f}/{sum(rtt_list)/len(rtt_list):.3f}/{max(rtt_list):.3f}/{(statistics.stdev(rtt_list)):.3f} ms")
 
 def resolve_target(target):
+    """Given a domain as the hostname, get the ip
+    
+    :param target: target destination of the packets
+    :return: ip of the target
+    """
     try:
         socket.inet_aton(target)
         return target, None  
@@ -95,6 +118,22 @@ def resolve_target(target):
             return None, None
 
 def main():
+    """Parse command-line arguments and initiate the ping process.
+    
+    This function handles user input, resolves the target hostname to an IP address,
+    and calls the `send_ping` function to perform the ICMP Echo Request. The user can 
+    specify the number of packets to send, the interval between packets, the payload size,
+    and the timeout for the ping request.
+
+    Command-line arguments:
+        - host: Target IP address or hostname to ping.
+        - -c: Number of packets to send.
+        - -i: Interval (in seconds) between packets (default is 1.0).
+        - -s: Payload size in bytes (default is 56).
+        - -t: Timeout in seconds for the ping request.
+
+    :return: None
+    """
     parser = argparse.ArgumentParser(description="Unix-style Ping command")
     parser.add_argument("host", type=str, help="Target IP or Hostname")
     parser.add_argument("-c", type=int, default=None, help="Number of packets")

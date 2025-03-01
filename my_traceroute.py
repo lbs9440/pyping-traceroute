@@ -3,8 +3,6 @@ import socket
 import struct
 import time
 import os
-import select
-import statistics
 
 def calculate_checksum(data):
     """Compute the ICMP checksum
@@ -161,6 +159,21 @@ def traceroute(dest, max_hops, probe_count, print_numerically, print_summary):
 
 
 def main():
+    """Parse command-line arguments and initiate the traceroute process.
+    
+    This function handles user input, resolves the target hostname to an IP address,
+    and calls the `traceroute` function to perform the ICMP Echo Request. The user can 
+    specify the number of probes per TTL, whether to print hop addresses numerically, 
+    and whether to display a summary of unanswered probes.
+
+    Command-line arguments:
+        - -n: Print hop addresses numerically (no hostname resolution).
+        - -q: Number of probes per TTL (default is 3).
+        - -S: Print a summary of how many probes were not answered per hop.
+        - host: Target IP address or hostname to trace the route.
+
+    :return: None
+    """
     parser = argparse.ArgumentParser(description="Unix-style Traceroute command")
     parser.add_argument("-n", action='store_true', help='Print hop addresses numerically')
     parser.add_argument("-q", type=int, default=3, help="Number of probes per TTL (default: 3)")
