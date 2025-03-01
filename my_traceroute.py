@@ -7,16 +7,26 @@ import select
 import statistics
 
 def calculate_checksum(data):
-    """Compute the ICMP checksum"""
+    """Compute the ICMP checksum
+    
+    :param data: data to compute the checksum
+    :return checksum:
+    """
     if len(data) % 2:
-        data += b'\x00'  # Padding if odd-length
+        data += b'\x00' 
     checksum = sum((data[i] << 8) + data[i + 1] for i in range(0, len(data), 2))
     checksum = (checksum >> 16) + (checksum & 0xFFFF)
     checksum = ~checksum & 0xFFFF
     return checksum
 
 def create_packet(identifier, seq, size):
-    """Create ICMP Echo Request packet"""
+    """Create ICMP Echo Request packet
+    
+    :param identifier: unique id for the packet
+    :param seq: sequence number for the packet
+    :param size: size of the packet in bytes
+    :return: returns the packet
+    """
     header = struct.pack('!BBHHH', 8, 0, 0, identifier, seq)
     payload = bytes(range(size))
     checksum = calculate_checksum(header + payload)
@@ -24,6 +34,11 @@ def create_packet(identifier, seq, size):
     return header + payload
 
 def resolve_target(target):
+    """Given a domain as the hostname, get the ip
+    
+    :param target: target destination of the packets
+    :return: ip of the target
+    """
     try:
         socket.inet_aton(target)
         return target, None  
@@ -37,18 +52,31 @@ def resolve_target(target):
         
 
 def resolve_domain(ip):
-    """Resolve domain name from IP address."""
+    """Given an IP address, gets the host name
+
+    :param ip: IP address
+    :return: hostname/domain of the IP address
+    """
     try:
         domain_name = socket.gethostbyaddr(ip)[0]
         return domain_name
     except socket.herror:
         return None  # No domain name found
 
-def send_probe(dest, ttl, probe_count, print_numerically, timeout=1):
+def send_probe(dest, ttl, probe_count, print_numerically, timeout=4):
+    """Send ICMP Echo Requests (probes) to a destination with a given TTL
+    
+    :param dest: target destination IP
+    :param ttl: Time-To-Live value for packets
+    :param probe_count: number of probes per TTL
+    :param print_numerically: whether to print only numerical addresses
+    :param timeout: timeout for each probe response (default: 4s)
+    :return: list of probe results (address, TTL, round-trip time) or None on timeout
+    """
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_ICMP)
         s.setsockopt(socket.IPPROTO_IP, socket.IP_TTL, ttl)
-        s.settimeout(timeout)  # Set timeout to prevent indefinite blocking
+        s.settimeout(timeout)  
     except PermissionError:
         print("Permission denied: Run the script as root to use raw sockets.")
         return []
@@ -63,7 +91,7 @@ def send_probe(dest, ttl, probe_count, print_numerically, timeout=1):
         domain_name = None
 
         try:
-            response, addr = s.recvfrom(1024)  # Wait for response, with timeout
+            response, addr = s.recvfrom(1024) 
             addr = addr[0]
             rtt = time.time() - start_time
             ttl_value = struct.unpack("!B", response[8:9])[0]
@@ -78,13 +106,21 @@ def send_probe(dest, ttl, probe_count, print_numerically, timeout=1):
                 print
             print(f"{rtt * 1000:.3f} ms", end=" ")
         except socket.timeout:
-            probes.append(None)  # Timeout, no response received
+            probes.append(None)  # No response received
             print("*", end=" ")
 
     return probes
 
 
 def traceroute(dest, max_hops, probe_count, print_numerically, print_summary):
+    """Perform a traceroute to a destination
+    
+    :param dest: target IP address
+    :param max_hops: maximum number of hops to trace
+    :param probe_count: number of probes per hop
+    :param print_numerically: whether to print only IPs
+    :param print_summary: whether to display packet loss per hop
+    """
     print(f"Traceroute to {dest} ({dest}), {max_hops} hops max, 40 byte packets")
 
     ttl = 1
@@ -94,14 +130,12 @@ def traceroute(dest, max_hops, probe_count, print_numerically, print_summary):
 
         probes = send_probe(dest, ttl, probe_count, print_numerically)
 
-        # Check if the first probe timed out
         if probes and probes[0] is None:
-            # Handle timeout
             unanswered_probes += probe_count
         else:
-            addr = probes[0][0]  # First address in the list of probes
+            addr = probes[0][0]  
 
-            # Check if we reached the destination
+            # Check if destination is reached
             if addr == dest:
                 for probe in probes:
                     if probe is None:
@@ -110,10 +144,9 @@ def traceroute(dest, max_hops, probe_count, print_numerically, print_summary):
                     loss_percent = (unanswered_probes / probe_count) * 100
                     print(f"({loss_percent:.0f}% loss)", end=" ")
                 unanswered_probes = 0
-                print()  # Ensure newline after destination reached
+                print() 
                 break  # Stop the traceroute
 
-            # Print all RTTs for the hop
             for probe in probes:
                 if probe is None:
                     unanswered_probes += 1
@@ -123,7 +156,7 @@ def traceroute(dest, max_hops, probe_count, print_numerically, print_summary):
             print(f"({loss_percent:.0f}% loss)", end=" ")
         unanswered_probes = 0          
 
-        print()  # Ensure new line after each hop
+        print()  
         ttl += 1
 
 
