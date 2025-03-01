@@ -95,7 +95,7 @@ def resolve_target(target):
             return None, None
 
 def main():
-    parser = argparse.ArgumentParser(description="Unix-style Ping")
+    parser = argparse.ArgumentParser(description="Unix-style Ping command")
     parser.add_argument("host", type=str, help="Target IP or Hostname")
     parser.add_argument("-c", type=int, default=None, help="Number of packets")
     parser.add_argument("-i", type=float, default=1.0, help="Interval between packets")
