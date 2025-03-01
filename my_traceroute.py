@@ -74,14 +74,13 @@ def send_probe(dest, ttl, probe_count, print_numerically, timeout=1):
                 if domain_name and not print_numerically:
                     print(f"{domain_name} ({addr})", end=" ")
                 else:
-                    print(f"{addr} ({addr})", end=" ")
+                    print(f"{addr}" if print_numerically else f"{addr} ({addr})", end=" ")
                 print
             print(f"{rtt * 1000:.3f} ms", end=" ")
         except socket.timeout:
             probes.append(None)  # Timeout, no response received
             print("*", end=" ")
 
-    
     return probes
 
 
@@ -90,8 +89,6 @@ def traceroute(dest, max_hops, probe_count, print_numerically, print_summary):
 
     ttl = 1
     unanswered_probes = 0
-    total_probes = 0
-
     while ttl <= max_hops:
         print(f"{ttl:2}", end=" ")
 
@@ -109,8 +106,10 @@ def traceroute(dest, max_hops, probe_count, print_numerically, print_summary):
                 for probe in probes:
                     if probe is None:
                         unanswered_probes += 1
-                    else:
-                        _, _, rtt = probe
+                if print_summary:
+                    loss_percent = (unanswered_probes / probe_count) * 100
+                    print(f"({loss_percent:.0f}% loss)", end=" ")
+                unanswered_probes = 0
                 print()  # Ensure newline after destination reached
                 break  # Stop the traceroute
 
@@ -118,13 +117,14 @@ def traceroute(dest, max_hops, probe_count, print_numerically, print_summary):
             for probe in probes:
                 if probe is None:
                     unanswered_probes += 1
-                
+            
+        if print_summary:
+            loss_percent = (unanswered_probes / probe_count) * 100
+            print(f"({loss_percent:.0f}% loss)", end=" ")
+        unanswered_probes = 0          
 
         print()  # Ensure new line after each hop
         ttl += 1
-    
-    if print_summary:
-        print(f"\n\nSummary: {unanswered_probes} probes unanswered out of {total_probes} probes")
 
 
 def main():
@@ -138,7 +138,7 @@ def main():
 
     ip, hostname = resolve_target(args.host)
     if ip:
-        traceroute(ip, 30, args.q, args.n, args.S)
+        traceroute(ip, 64, args.q, args.n, args.S)
     
 
 if __name__ == '__main__':
