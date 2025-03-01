@@ -6,31 +6,6 @@ import os
 import select
 import statistics
 
-def send_probe(dest, ttl, probe_count, timeout=1):
-    try:
-        s = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_ICMP)
-        s.setsockopt(socket.IPPROTO_IP, socket.IP_TTL, ttl)
-        s.settimeout(timeout)  # Set timeout to prevent indefinite blocking
-    except PermissionError:
-        print("Permission denied: Run the script as root to use raw sockets.")
-        return []
-
-    identifier = os.getpid() & 0xFFFF
-    probes = []
-
-    for seq in range(1, probe_count + 1):
-        packet = create_packet(identifier, seq, 56)
-        s.sendto(packet, (dest, 1))
-
-        try:
-            response, addr = s.recvfrom(1024)  # Wait for response, with timeout
-            ttl_value = struct.unpack("!B", response[8:9])[0]
-            probes.append((addr[0], ttl_value))
-        except socket.timeout:
-            probes.append(None)  # Timeout, no response received
-    
-    return probes
-
 def calculate_checksum(data):
     """Compute the ICMP checksum"""
     if len(data) % 2:
@@ -60,41 +35,96 @@ def resolve_target(target):
             print(f"ping: {target}: Name or service not known")
             return None, None
         
+
+def resolve_domain(ip):
+    """Resolve domain name from IP address."""
+    try:
+        domain_name = socket.gethostbyaddr(ip)[0]
+        return domain_name
+    except socket.herror:
+        return None  # No domain name found
+
+def send_probe(dest, ttl, probe_count, print_numerically, timeout=1):
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_ICMP)
+        s.setsockopt(socket.IPPROTO_IP, socket.IP_TTL, ttl)
+        s.settimeout(timeout)  # Set timeout to prevent indefinite blocking
+    except PermissionError:
+        print("Permission denied: Run the script as root to use raw sockets.")
+        return []
+
+    identifier = os.getpid() & 0xFFFF
+    probes = []
+
+    for seq in range(1, probe_count + 1):
+        packet = create_packet(identifier, seq, 56)
+        start_time = time.time()
+        s.sendto(packet, (dest, 1))
+        domain_name = None
+
+        try:
+            response, addr = s.recvfrom(1024)  # Wait for response, with timeout
+            addr = addr[0]
+            rtt = time.time() - start_time
+            ttl_value = struct.unpack("!B", response[8:9])[0]
+            probes.append((addr, ttl_value, rtt))
+            if seq == 1 and domain_name is None and not print_numerically:
+                domain_name = resolve_domain(addr)
+            if seq == 1:
+                if domain_name and not print_numerically:
+                    print(f"{domain_name} ({addr})", end=" ")
+                else:
+                    print(f"{addr} ({addr})", end=" ")
+                print
+            print(f"{rtt * 1000:.3f} ms", end=" ")
+        except socket.timeout:
+            probes.append(None)  # Timeout, no response received
+            print("*", end=" ")
+
+    
+    return probes
+
+
 def traceroute(dest, max_hops, probe_count, print_numerically, print_summary):
-    print(f"Tracerouting to {dest}...")
+    print(f"Traceroute to {dest} ({dest}), {max_hops} hops max, 40 byte packets")
 
     ttl = 1
     unanswered_probes = 0
     total_probes = 0
 
     while ttl <= max_hops:
-        print(f"\nHop {ttl}: ", end="")
+        print(f"{ttl:2}", end=" ")
 
-        probes = send_probe(dest, ttl, probe_count)
+        probes = send_probe(dest, ttl, probe_count, print_numerically)
 
-        if probes:
+        # Check if the first probe timed out
+        if probes and probes[0] is None:
+            # Handle timeout
+            unanswered_probes += probe_count
+        else:
+            addr = probes[0][0]  # First address in the list of probes
+
+            # Check if we reached the destination
+            if addr == dest:
+                for probe in probes:
+                    if probe is None:
+                        unanswered_probes += 1
+                    else:
+                        _, _, rtt = probe
+                print()  # Ensure newline after destination reached
+                break  # Stop the traceroute
+
+            # Print all RTTs for the hop
             for probe in probes:
                 if probe is None:
-                    print("*", end=" ")
                     unanswered_probes += 1
-                else:
-                    if print_numerically:
-                        print(probe[0], end=" ")
-                    else:
-                        print(f"{probe[0]}", end=" ")
-                    
-                    if probe[0] == dest:
-                        print(f"{probe[0]}", end=" ")
-                        return
-            total_probes += probe_count
-        else:
-            print("No response from host")
-        
+                
+
+        print()  # Ensure new line after each hop
         ttl += 1
     
     if print_summary:
         print(f"\n\nSummary: {unanswered_probes} probes unanswered out of {total_probes} probes")
-                
 
 
 def main():
