@@ -124,14 +124,14 @@ def main():
     This function handles user input, resolves the target hostname to an IP address,
     and calls the `send_ping` function to perform the ICMP Echo Request. The user can 
     specify the number of packets to send, the interval between packets, the payload size,
-    and the timeout for the ping request.
+    and the timeout.
 
     Command-line arguments:
         - host: Target IP address or hostname to ping.
         - -c: Number of packets to send.
         - -i: Interval (in seconds) between packets (default is 1.0).
         - -s: Payload size in bytes (default is 56).
-        - -t: Timeout in seconds for the ping request.
+        - -t: Timeout in seconds for when the program terminates.
 
     :return: None
     """
