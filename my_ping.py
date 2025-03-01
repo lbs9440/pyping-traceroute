@@ -45,7 +45,7 @@ def send_ping(dest_ip, count, interval, size, timeout, hostname):
     """
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_ICMP)
-        s.settimeout(timeout)
+        s.settimeout(10)
     except PermissionError:
         print("ping: Operation not allowed")
         return
@@ -58,8 +58,9 @@ def send_ping(dest_ip, count, interval, size, timeout, hostname):
     print(f"PING {hostname or dest_ip} ({dest_ip}) {size} bytes of data.")
 
     seq = 1
+
     try:
-        while count is None or seq <= count:
+        while (count is None or seq <= count) and (timeout is None or timeout >= time.time() - start_time):
             send_time = time.time()
             packet = create_packet(identifier, seq, size)
             s.sendto(packet, (dest_ip, 1))
